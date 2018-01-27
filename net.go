@@ -12,7 +12,7 @@ import (
 )
 
 var (
-	nodeidentifier = strings.Replace(uuid.NewV4().String(), "-", "", -1)
+	nodeidentifier = strings.Replace(uuid.Must(uuid.NewV4()).String(), "-", "", -1)
 	blockchain     = NewBlockChain()
 	port           string
 )
