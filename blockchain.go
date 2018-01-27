@@ -3,14 +3,20 @@ package blockchain
 import (
 	"bytes"
 	"crypto/sha256"
+	"encoding/json"
+	"fmt"
+	"io/ioutil"
+	"net/http"
+	"net/url"
 	"strconv"
 	"time"
 )
 
 // BlockChain 区块链定义
 type BlockChain struct {
-	Chain               []*Block
-	CurrentTransactions []*Transaction
+	Chain               []*Block       `json:"chain"`
+	CurrentTransactions []*Transaction `json:"current_transactions"`
+	Nodes               *Set           `json:"nodes"`
 }
 
 // NewTransaction 新的交易
@@ -26,7 +32,7 @@ func (bc *BlockChain) NewTransaction(sender, recipient string, amount int) int {
 // NewBlock 新的区块
 func (bc *BlockChain) NewBlock(proof int, previousHash string) *Block {
 	if previousHash == "" {
-		previousHash = bc.LastBlock().Hash()
+		previousHash = Hash(bc.LastBlock())
 	}
 
 	block := &Block{
@@ -69,6 +75,84 @@ func (bc *BlockChain) Len() int {
 	return len(bc.Chain)
 }
 
+// RegisterNode 注册节点
+func (bc *BlockChain) RegisterNode(address string) {
+	u, err := url.Parse(address)
+	if err != nil {
+		return
+	}
+	bc.Nodes.Add(u.Host)
+}
+
+// ValidChain 验证区块链
+func (bc *BlockChain) ValidChain(chain []*Block) bool {
+	lastBlock := chain[0]
+	currentIndex := 1
+	chainLength := len(chain)
+
+	for currentIndex < chainLength {
+		block := chain[currentIndex]
+		fmt.Println(lastBlock)
+		fmt.Println(block)
+		fmt.Println("\n----------\n")
+
+		if block.PreviousHash != Hash(lastBlock) {
+			return false
+		}
+
+		if !ValidProof(lastBlock.Proof, block.Proof) {
+			return false
+		}
+
+		lastBlock = block
+		currentIndex++
+	}
+	return true
+}
+
+// ResolveConflicts 解决区块链冲突
+func (bc *BlockChain) ResolveConflicts() bool {
+	var newChain []*Block
+	neighbours := bc.Nodes
+	maxLength := bc.Len()
+
+	for node := range neighbours.items {
+		resp, err := http.Get(fmt.Sprintf("http://%s/chain", node))
+		if err != nil {
+			continue
+		}
+		defer resp.Body.Close()
+
+		var newBlockChain BlockChain
+		doc, _ := ioutil.ReadAll(resp.Body)
+		if err := json.Unmarshal(doc, &newBlockChain); err != nil {
+			continue
+		}
+
+		length := newBlockChain.Len()
+		chain := newBlockChain.Chain
+
+		if length > maxLength && bc.ValidChain(chain) {
+			maxLength = length
+			newChain = chain
+		}
+	}
+
+	if len(newChain) != 0 {
+		bc.Chain = newChain
+		return true
+	}
+	return false
+}
+
+// Hash 返回区块的 Hash
+func Hash(b *Block) string {
+	headers, _ := json.Marshal(b)
+
+	value := sha256.Sum256(headers)
+	return fmt.Sprintf("%x", value)
+}
+
 // ValidProof 验证证明
 func ValidProof(lastProof, proof int) bool {
 	guess := bytes.Join([][]byte{
@@ -90,5 +174,6 @@ func NewBlockChain() *BlockChain {
 				TimeStamp:    time.Now().Unix(),
 			},
 		},
+		Nodes: NewSet(),
 	}
 }

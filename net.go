@@ -17,6 +17,11 @@ var (
 	port           string
 )
 
+// nodeTmp 临时存放节点
+type nodeTmp struct {
+	Nodes []string `json:"nodes"`
+}
+
 func init() {
 	flag.StringVar(&port, "port", ":8080", "端口")
 	if !strings.HasPrefix(port, ":") {
@@ -33,7 +38,9 @@ type Response struct {
 	Message      string         `json:"message,omitempty"`
 	PreviousHash string         `json:"previous_hash,omitempty"`
 	Chain        []*Block       `json:"chain,omitempty"`
+	NewChain     []*Block       `json:"new_chain,omitempty"`
 	Transactions []*Transaction `json:"transactions,omitempty"`
+	TotalNodes   []string       `json:"total_nodes,omitempty"`
 }
 
 func mine(w http.ResponseWriter, r *http.Request) {
@@ -57,27 +64,23 @@ func mine(w http.ResponseWriter, r *http.Request) {
 }
 
 func newTransaction(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		w.Write([]byte("Missing values"))
-		return
+	if r.Method == http.MethodPost {
+		var values Transaction
+
+		doc, _ := ioutil.ReadAll(r.Body)
+		if err := json.Unmarshal(doc, &values); err != nil {
+			w.Write([]byte("Missing values"))
+			return
+		}
+
+		index := blockchain.NewTransaction(values.Sender, values.Recipient, values.Amount)
+		response, _ := json.Marshal(
+			&Response{
+				Message: fmt.Sprintf("Transaction will be added to Block %d", index),
+			})
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		w.Write(response)
 	}
-
-	var values Transaction
-
-	doc, _ := ioutil.ReadAll(r.Body)
-
-	if err := json.Unmarshal(doc, &values); err != nil {
-		w.Write([]byte("Missing values"))
-		return
-	}
-	index := blockchain.NewTransaction(values.Sender, values.Recipient, values.Amount)
-
-	response, _ := json.Marshal(
-		&Response{
-			Message: fmt.Sprintf("Transaction will be added to Block %d", index),
-		})
-	w.Header().Set("Content-Type", "application/json; charset=utf-8")
-	w.Write(response)
 }
 
 func fullChain(w http.ResponseWriter, r *http.Request) {
@@ -90,12 +93,58 @@ func fullChain(w http.ResponseWriter, r *http.Request) {
 	w.Write(doc)
 }
 
+func registerNodes(w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodPost {
+		var values nodeTmp
+		doc, _ := ioutil.ReadAll(r.Body)
+		if err := json.Unmarshal(doc, &values); err != nil {
+			return
+		}
+
+		if len(values.Nodes) == 0 {
+			w.WriteHeader(400)
+			w.Write([]byte("Error: Please supply a valid list of nodes"))
+			return
+		}
+
+		for _, node := range values.Nodes {
+			blockchain.RegisterNode(node)
+		}
+
+		data, _ := json.Marshal(Response{
+			Message:    "New nodes have been added",
+			TotalNodes: blockchain.Nodes.List(),
+		})
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		w.Write(data)
+	}
+}
+
+func consensus(w http.ResponseWriter, r *http.Request) {
+	var data []byte
+	if blockchain.ResolveConflicts() {
+		data, _ = json.Marshal(Response{
+			Message:  "Our chain was replaced",
+			NewChain: blockchain.Chain,
+		})
+	} else {
+		data, _ = json.Marshal(Response{
+			Message: "Our chain is authoritative",
+			Chain:   blockchain.Chain,
+		})
+	}
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.Write(data)
+}
+
 // Run .
 func Run() {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/mine", mine)
 	mux.HandleFunc("/transactions/new", newTransaction)
 	mux.HandleFunc("/chain", fullChain)
+	mux.HandleFunc("/nodes/resolve", consensus)
+	mux.HandleFunc("/nodes/register", registerNodes)
 
 	fmt.Printf("Listen: http://127.0.0.1%s\n", port)
 	http.ListenAndServe(port, mux)
