@@ -24,13 +24,10 @@ type nodeTmp struct {
 
 func init() {
 	flag.StringVar(&port, "port", ":8080", "端口")
-	if !strings.HasPrefix(port, ":") {
-		port = ":" + port
-	}
 	flag.Parse()
 }
 
-// Response .
+// Response josn 响应
 type Response struct {
 	Index        int            `json:"index,omitempty"`
 	Length       int            `json:"length,omitempty"`
@@ -43,6 +40,7 @@ type Response struct {
 	TotalNodes   []string       `json:"total_nodes,omitempty"`
 }
 
+// mine 挖矿处理
 func mine(w http.ResponseWriter, r *http.Request) {
 	lastBlock := blockchain.LastBlock()
 	lastProof := lastBlock.Proof
@@ -63,6 +61,7 @@ func mine(w http.ResponseWriter, r *http.Request) {
 	w.Write(doc)
 }
 
+// newTransaction 新交易处理
 func newTransaction(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodPost {
 		var values Transaction
@@ -83,6 +82,7 @@ func newTransaction(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// fullChain 返回全部区块链
 func fullChain(w http.ResponseWriter, r *http.Request) {
 	response := Response{
 		Chain:  blockchain.Chain,
@@ -93,6 +93,7 @@ func fullChain(w http.ResponseWriter, r *http.Request) {
 	w.Write(doc)
 }
 
+// registerNodes 注册节点
 func registerNodes(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodPost {
 		var values nodeTmp
@@ -120,6 +121,7 @@ func registerNodes(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// consensus 处理同步
 func consensus(w http.ResponseWriter, r *http.Request) {
 	var data []byte
 	if blockchain.ResolveConflicts() {
@@ -145,6 +147,10 @@ func Run() {
 	mux.HandleFunc("/chain", fullChain)
 	mux.HandleFunc("/nodes/resolve", consensus)
 	mux.HandleFunc("/nodes/register", registerNodes)
+
+	if !strings.HasPrefix(port, ":") {
+		port = ":" + port
+	}
 
 	fmt.Printf("Listen: http://127.0.0.1%s\n", port)
 	http.ListenAndServe(port, mux)

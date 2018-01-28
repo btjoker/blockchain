@@ -70,7 +70,7 @@ func (bc *BlockChain) LastBlock() *Block {
 	return nil
 }
 
-// Len 区块链长度
+// Len 区块链总长度
 func (bc *BlockChain) Len() int {
 	return len(bc.Chain)
 }
