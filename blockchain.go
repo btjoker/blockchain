@@ -3,6 +3,7 @@ package blockchain
 import (
 	"bytes"
 	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
@@ -150,7 +151,7 @@ func Hash(b *Block) string {
 	headers, _ := json.Marshal(b)
 
 	value := sha256.Sum256(headers)
-	return fmt.Sprintf("%x", value)
+	return hex.EncodeToString(value[:])
 }
 
 // ValidProof 验证证明
